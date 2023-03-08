@@ -2,3 +2,4 @@
 venv/
 __pycache__/
 /flaskblog/static/profile_pics/
+flasklearning/instance
