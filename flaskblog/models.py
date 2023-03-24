@@ -1,7 +1,11 @@
+import time
 from datetime import datetime
-from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
-from flaskblog import db, login_manager, app
+from authlib.jose import jwt
+from authlib.jose.errors import JoseError
 from flask_login import UserMixin
+from flaskblog import db, login_manager
+from flask import current_app
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -15,22 +19,43 @@ class User(db.Model, UserMixin):
     password = db.Column(db.String(60), nullable=False)
     posts = db.relationship('Post', backref='author', lazy=True)
 
-    def get_reset_token(self, expires_sec=1800):
-        s = Serializer(app.config['SECRET_KEY'], expires_sec)
-        return s.dumps({'user_id': self.id}).decode('utf-8')
+    def get_reset_token(self, expires=120):
+        """
+        Create password reset token.
+
+        Creates a password reset token.
+        """
+
+        header = {"alg": "HS256"}
+        payload = {
+            "user_id": self.id,
+            "expires": int(time.time()) + expires
+        }
+        args = (header, payload, current_app.config["SECRET_KEY"])
+        return jwt.encode(*args).decode("utf-8")
 
     @staticmethod
     def verify_reset_token(token):
-        s = Serializer(app.config['SECRET_KEY'])
         try:
-            user_id = s.loads(token)['user_id']
-        except:
+            deserialized = jwt.decode(token, current_app.config["SECRET_KEY"])
+        except JoseError:
             return None
-        return User.query.get(user_id)
+
+        if int(time.time()) < deserialized["expires"]:
+            return User.query.get(deserialized["user_id"])
 
     def __repr__(self):
-        return f"User('{self.username}', '{self.email}', '{self.image_file}')"
+        """
+        Represents the User as a string.
 
+        When the user object is printed it states username, email, and
+        image file.
+
+        Returns:
+            str: The user's username, email, and image file.
+        """
+
+        return f"User({self.username!r}, {self.email!r}, {self.image_file!r})"
 
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
